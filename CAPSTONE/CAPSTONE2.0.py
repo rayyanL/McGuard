@@ -3,6 +3,7 @@ import os
 import re
 import pytesseract
 import cv2
+import pandas as pd
 from flask import Flask, render_template, request
 from werkzeug.utils import secure_filename
 from pyzbar.pyzbar import decode
