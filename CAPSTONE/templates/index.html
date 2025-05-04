@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MC Verifier</title>
+</head>
+<body>
+    <h2>Upload Your Medical Certificate (Image)</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="mc_file" required>
+        <input type="submit" value="Verify">
+    </form>
+    {% if result %}
+        <h3>Result:</h3>
+        <p>{{ result }}</p>
+    {% endif %}
+</body>
+</html>
