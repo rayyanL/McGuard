@@ -1,0 +1,14 @@
+2025-05-06 16:05:24 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-05-06 16:05:24 - INFO - [33mPress CTRL+C to quit[0m
+2025-05-06 16:05:24 - INFO -  * Restarting with stat
+2025-05-06 16:05:24 - WARNING -  * Debugger is active!
+2025-05-06 16:05:24 - INFO -  * Debugger PIN: 107-428-668
+2025-05-06 16:05:37 - INFO - 127.0.0.1 - - [06/May/2025 16:05:37] "GET / HTTP/1.1" 200 -
+2025-05-06 16:05:42 - INFO - File saved: uploaded_mcs/mc.jpg
+2025-05-06 16:05:43 - INFO - Successfully extracted text from uploaded_mcs/mc.jpg
+2025-05-06 16:05:43 - INFO - Successfully extracted IC: T0721279D
+2025-05-06 16:05:43 - INFO - Successfully extracted 2 QR URLs
+2025-05-06 16:05:43 - INFO - Successfully extracted IC from QR URL: T0721279D
+2025-05-06 16:05:43 - INFO - ✅ MC is Legit!
+2025-05-06 16:05:43 - INFO - 127.0.0.1 - - [06/May/2025 16:05:43] "POST / HTTP/1.1" 200 -
