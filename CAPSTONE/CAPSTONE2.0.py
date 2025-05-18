@@ -1,181 +1,129 @@
-# 
-# Standard library imports
+# Feature 3
+
+
 import os
-import re
-import logging
-from urllib.parse import urlparse, parse_qs
-
-# Third-party imports
+import tempfile
 import pytesseract
+from PIL import Image
 import cv2
-import pandas as pd
-from flask import Flask, render_template, request
-from werkzeug.utils import secure_filename
+import numpy as np
 from pyzbar.pyzbar import decode
+import requests
+import re
+import bs4
 from pdf2image import convert_from_path
+import streamlit as st
 
-# Constants
-UPLOAD_FOLDER = 'uploaded_mcs'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
-LOG_FILE = 'mc_checker.log'
+# --- Your backend logic functions ---
 
-# Configure logging
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+def extract_text_from_image(image):
+    return pytesseract.image_to_string(image)
 
-# Flask setup
-app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+def extract_qr_data(image):
+    decoded_objs = decode(image)
+    qr_data = []
+    for obj in decoded_objs:
+        qr_data.append(obj.data.decode('utf-8'))
+    return qr_data
 
-# Set tesseract path (customize this if needed)
-pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"  # or '/usr/bin/tesseract' for Linux
-
-def setup_app():
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-        logging.info(f"Created upload directory: {UPLOAD_FOLDER}")
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def validate_image(image_path):
+def fetch_qr_page_text(url):
     try:
-        img = cv2.imread(image_path)
-        return img is not None
-    except Exception as e:
-        logging.error(f"Error validating image {image_path}: {str(e)}")
-        return False
-
-def convert_pdf_to_image(pdf_path):
-    try:
-        images = convert_from_path(pdf_path, first_page=1, last_page=1)
-        image_path = pdf_path + ".jpg"
-        images[0].save(image_path, 'JPEG')
-        logging.info(f"Converted PDF to image: {image_path}")
-        return image_path
-    except Exception as e:
-        logging.error(f"Failed to convert PDF to image: {str(e)}")
-        raise ValueError("PDF conversion failed")
-
-def extract_text_from_image(image_path):
-    try:
-        if not validate_image(image_path):
-            raise ValueError("Invalid image file")
-        image = cv2.imread(image_path)
-        text = pytesseract.image_to_string(image)
-        logging.info(f"Successfully extracted text from {image_path}")
+        r = requests.get(url)
+        r.raise_for_status()
+        soup = bs4.BeautifulSoup(r.text, 'html.parser')
+        text = soup.get_text(separator=' ')
         return text
     except Exception as e:
-        logging.error(f"Error extracting text from {image_path}: {str(e)}")
-        raise ValueError(f"Failed to extract text: {str(e)}")
+        return ""
 
-def extract_ic_from_text(text):
-    try:
-        match = re.search(r'T\d{7}[A-Z]', text)
-        if match:
-            ic = match.group(0)
-            logging.info(f"Successfully extracted IC: {ic}")
-            return ic
-        logging.warning("No IC number found in text")
-        return None
-    except Exception as e:
-        logging.error(f"Error extracting IC from text: {str(e)}")
-        return None
+def find_ic_and_start_date(text):
+    ic_pattern = r'\bT\d{7}[A-Z]\b'  # Example: T0508410A
+    start_date_pattern = r'(\d{1,2}[-/][A-Za-z]{3}[-/]\d{4})'  # Example: 25-Apr-2025
 
-def extract_qr_urls(image_path):
-    try:
-        image = cv2.imread(image_path)
-        decoded_objects = decode(image)
-        qr_urls = [obj.data.decode('utf-8') for obj in decoded_objects]
-        logging.info(f"Successfully extracted {len(qr_urls)} QR URLs")
-        return qr_urls
-    except Exception as e:
-        logging.error(f"Error extracting QR URLs: {str(e)}")
-        return []
+    ic = None
+    start_date = None
 
-def extract_ic_from_qr_url(qr_url):
-    try:
-        parsed_url = urlparse(qr_url)
-        query_params = parse_qs(parsed_url.query)
-        ic_number = query_params.get('patient_nric', [None])[0]
-        if ic_number:
-            logging.info(f"Successfully extracted IC from QR URL: {ic_number}")
-        return ic_number
-    except Exception as e:
-        logging.error(f"Error extracting IC from QR URL: {str(e)}")
-        return None
+    ic_match = re.search(ic_pattern, text)
+    if ic_match:
+        ic = ic_match.group(0)
 
-def verify_ic(ocr_ic, qr_ic):
-    if not ocr_ic or not qr_ic:
-        msg = "❌ Could not extract IC number properly."
-        logging.warning(msg)
-        return msg
+    start_date_match = re.search(start_date_pattern, text)
+    if start_date_match:
+        start_date = start_date_match.group(0)
 
-    if ocr_ic == qr_ic:
-        msg = "✅ MC is Legit!"
-        logging.info(msg)
-        return msg
+    return ic, start_date
+
+def check_mark(val):
+    return "✔️" if val else "❌"
+
+# --- Streamlit UI ---
+
+st.title("🩺 Medical Certificate Verifier")
+
+uploaded_file = st.file_uploader("Upload Medical Certificate (Image or PDF)", type=["png", "jpg", "jpeg", "pdf"])
+
+if uploaded_file is not None:
+    # Display uploaded image preview or PDF info
+    if uploaded_file.type == "application/pdf":
+        st.info("PDF uploaded — processing first page as image.")
     else:
-        msg = "⚠️ Please verify manually. Mismatch in IC number."
-        logging.warning(f"IC mismatch - OCR: {ocr_ic}, QR: {qr_ic}")
-        return msg
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        try:
-            if 'mc_file' not in request.files:
-                logging.warning("No file part in request")
-                return render_template('index.html', error="No file uploaded")
-
-            file = request.files['mc_file']
-            if not file or not file.filename:
-                logging.warning("No file selected")
-                return render_template('index.html', error="No file selected")
-
-            if not allowed_file(file.filename):
-                logging.warning(f"Invalid file type: {file.filename}")
-                return render_template('index.html', error="Invalid file type")
-
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-            logging.info(f"File saved: {file_path}")
-
-            # Handle PDF conversion
-            if filename.lower().endswith('.pdf'):
-                image_path = convert_pdf_to_image(file_path)
+        st.image(uploaded_file, caption="Uploaded Medical Certificate", use_column_width=True)
+    
+    if st.button("Verify MC"):
+        with st.spinner("Processing..."):
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf" if uploaded_file.type=="application/pdf" else ".jpg") as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                tmp_path = tmp_file.name
+            
+            # Load images from file
+            images = []
+            if uploaded_file.type == "application/pdf":
+                pages = convert_from_path(tmp_path, dpi=300)
+                images = pages
             else:
-                image_path = file_path
+                img = Image.open(tmp_path).convert("RGB")
+                images = [img]
+            
+            # Remove temp file after loading
+            os.remove(tmp_path)
+            
+            # Extract OCR from first image
+            ocr_text = extract_text_from_image(images[0])
+            st.subheader("Extracted Text from MC:")
+            st.text_area("", ocr_text, height=300)
+            
+            # Convert PIL image to cv2 format for QR decoding
+            cv_image = cv2.cvtColor(np.array(images[0]), cv2.COLOR_RGB2BGR)
+            qr_codes = extract_qr_data(cv_image)
+            
+            ic_mc, start_date_mc = find_ic_and_start_date(ocr_text)
+            
+            ic_qr, start_date_qr = None, None
+            qr_text = ""
+            if qr_codes:
+                qr_url = qr_codes[0]
+                qr_text = fetch_qr_page_text(qr_url)
+                ic_qr, start_date_qr = find_ic_and_start_date(qr_text)
+            
+            ic_match = (ic_mc == ic_qr) and (ic_mc is not None)
+            date_match = (start_date_mc == start_date_qr) and (start_date_mc is not None)
+            all_good = ic_match and date_match
+            
+            st.markdown("### Verification Results")
+            st.write(f"**IC on MC:** {ic_mc} {check_mark(ic_match)}")
+            st.write(f"**Start Date on MC:** {start_date_mc} {check_mark(date_match)}")
+            st.write(f"**IC from QR:** {ic_qr if ic_qr else 'Not found'} {check_mark(ic_match)}")
+            st.write(f"**Start Date from QR:** {start_date_qr if start_date_qr else 'Not found'} {check_mark(date_match)}")
+            st.write(f"**QR Codes found:** {qr_codes if qr_codes else 'None'}")
+            
+            if all_good:
+                st.success("✅ MC Verified Successfully!")
+            else:
+                st.error("❌ MC Verification Failed. Data mismatch detected.")
+else:
+    st.info("Please upload a Medical Certificate image or PDF to start verification.")
 
-            text = extract_text_from_image(image_path)
-            ocr_ic = extract_ic_from_text(text)
-            qr_urls = extract_qr_urls(image_path)
-
-            qr_ic = None
-            for url in qr_urls:
-                ic_from_qr = extract_ic_from_qr_url(url)
-                if ic_from_qr:
-                    qr_ic = ic_from_qr
-                    break
-
-            result = verify_ic(ocr_ic, qr_ic)
-            return render_template('index.html', result=result)
-
-        except Exception as e:
-            logging.error(f"Error processing request: {str(e)}")
-            return render_template('index.html', error="An error occurred")
-
-    return render_template('index.html')
-
-if __name__ == '__main__':
-    setup_app()
-    app.run(debug=True)
 
 
 # streamlit run CAPSTONE/CAPSTONE2.0.py
